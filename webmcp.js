@@ -13,7 +13,22 @@
 
   var mc = null;
   try { mc = document.modelContext || (window.navigator && window.navigator.modelContext) || null; } catch (e) { mc = null; }
-  if (!mc || typeof mc.registerTool !== 'function') { return; }
+
+  // 진단용 상태 노출 — 미지원일 때 조용히 끝나면 원인을 알 수 없으므로 상태를 남긴다.
+  var supported = !!(mc && typeof mc.registerTool === 'function');
+  window.__WEBMCP_STATUS = supported ? 'pending' : (mc ? 'unsupported-api-shape' : 'unsupported-browser');
+  if (!supported) {
+    try {
+      console.info('[webmcp] document.modelContext 없음 (status=' + window.__WEBMCP_STATUS + '). ' +
+        'Chrome 149+ 에서 chrome://flags/#enable-webmcp-testing 을 Enabled 로 바꾸고 브라우저를 재시작한 뒤, ' +
+        'Ctrl+Shift+R 로 새로고침하세요. 콘솔에서 typeof document.modelContext 로 확인 가능.');
+    } catch (e) {}
+    try {
+      var probe = (typeof mc.provideContext === 'function'); // API 표면이 provideContext 뿐인 빌드 대비
+      if (probe) { window.__WEBMCP_STATUS = 'provideContext-only'; }
+    } catch (e) {}
+    if (window.__WEBMCP_STATUS !== 'provideContext-only') { return; }
+  }
 
   var ATLAS_WAIT_MS = 12000;
 
@@ -228,8 +243,10 @@
     if (typeof mc.registerTool !== 'function' && typeof mc.provideContext === 'function') {
       try {
         mc.provideContext({ tools: list });
+        window.__WEBMCP_STATUS = 'registered (provideContext)';
         try { console.log('[webmcp] atlas tools provided via provideContext:', list.length); } catch (e) {}
       } catch (e) {
+        window.__WEBMCP_STATUS = 'provideContext-failed';
         try { console.warn('[webmcp] provideContext failed', e); } catch (e2) {}
       }
       return;
@@ -237,6 +254,7 @@
     var i = 0;
     (function next() {
       if (i >= list.length) {
+        window.__WEBMCP_STATUS = 'registered (' + list.length + ' tools)';
         try { console.log('[webmcp] atlas tools registered:', list.length, list.map(function (t) { return t.name; })); } catch (e) {}
         return;
       }
