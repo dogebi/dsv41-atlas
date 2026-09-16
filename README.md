@@ -55,6 +55,10 @@
    (확장 없이 로직만 볼 때: `await window.__WEBMCP_ATLAS.call('get_model_overview')`)
 
 ### 전제조건 / 한계
+- 이 페이지는 **자체 CSP(meta)** 를 걸고 있다: `default-src 'none'; script-src 'unsafe-inline' 'self'; connect-src 'none'; …`
+  · 원래 `script-src 'unsafe-inline'` 뿐이라 **외부 스크립트(webmcp.js)가 차단**되어 도구가 등록되지 않았다 → `'self'` 를 추가해 같은 출처 스크립트만 허용했다.
+  · `connect-src 'none'` 은 그대로 두었다(페이지의 네트워크 차단 성격 유지). WebMCP 도구는 DOM/전역 상태만 읽으므로 네트워크가 필요 없다.
+  · CSP를 더 조이려면 `script-src 'unsafe-inline' 'self'` → `script-src 'unsafe-inline' 'sha256-…'`(webmcp.js 해시) 로 좁힐 수 있다. 파일을 수정하면 해시도 갱신해야 한다.
 - WebMCP는 **origin-isolated 문서**에서만 동작한다 → `document.domain` 을 쓰면 안 된다(현재 미사용).
 - Permissions Policy `tools`(기본 `self`) 적용 — top-level 문서는 그대로 동작.
 - Chrome/Edge 전용(실험 단계), Firefox·Safari 미지원. 도구는 그 페이지를 직접 방문한 브라우저에서만 발견된다.
