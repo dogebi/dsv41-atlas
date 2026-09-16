@@ -33,3 +33,30 @@
 ## 사용
 - 그냥 `index.html` 을 브라우저에서 열면 된다(도구·빌드·CDN 불필요, 완전 자립형).
 - 웹 배포 시 이 폴더를 그대로 정적 호스팅하면 된다.
+
+## WebMCP (AI 에이전트용 도구 노출, 2026-09-16 추가)
+`webmcp.js` 가 페이지의 기존 상태(`window.ATLAS_DEBUG`)만 읽어 **읽기 전용 도구 6개**를 등록한다.
+기존 방문자 동작은 전혀 바뀌지 않는다(미지원 브라우저에서는 즉시 종료 = progressive enhancement).
+
+| 도구 | 종류 | 설명 |
+|---|---|---|
+| `get_model_overview` | read | model_type·architectures·dtype·총 파라미터·정밀도별 총량·레이어/카테고리 요약 |
+| `list_categories` | read | 8개 카테고리별 텐서 수·파라미터 총량 |
+| `search_tensors` | read | 이름/카테고리/포맷/모듈로 텐서 검색 |
+| `get_tensor_detail` | read | 텐서 상세(shape·format·count·params·inspector 설명문) |
+| `focus_tensor` | 조작 | 해당 텐서로 뷰 이동·하이라이트(페이지 자체 선택 로직 호출) |
+| `get_view_state` | read | 현재 보고 있는 view/precision/layout/선택 상태 |
+
+### 확인 방법
+1. Chrome 149+ 에서 `chrome://flags/#enable-webmcp-testing` → Enabled → 재시작
+   (운영 배포 시에는 WebMCP origin trial 등록 후 `<meta http-equiv="origin-trial">` 삽입)
+2. 페이지를 열고 "Model Context Tool Inspector" 확장으로 도구 목록·스키마·수동 호출 확인
+3. 콘솔에서 `[webmcp] atlas tools registered: 6` 로그 확인
+   (확장 없이 로직만 볼 때: `await window.__WEBMCP_ATLAS.call('get_model_overview')`)
+
+### 전제조건 / 한계
+- WebMCP는 **origin-isolated 문서**에서만 동작한다 → `document.domain` 을 쓰면 안 된다(현재 미사용).
+- Permissions Policy `tools`(기본 `self`) 적용 — top-level 문서는 그대로 동작.
+- Chrome/Edge 전용(실험 단계), Firefox·Safari 미지원. 도구는 그 페이지를 직접 방문한 브라우저에서만 발견된다.
+- `focus_tensor` 는 화면 상태를 바꾸지만 되돌리기 쉬운 탐색 동작이라 `consequentialHint:false` 로 둔다.
+  상태를 실제로 파괴하는 도구를 추가할 경우 `consequentialHint:true` 로 사용자 확인을 유도할 것.
