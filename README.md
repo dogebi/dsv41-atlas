@@ -34,9 +34,13 @@
 - 그냥 `index.html` 을 브라우저에서 열면 된다(도구·빌드·CDN 불필요, 완전 자립형).
 - 웹 배포 시 이 폴더를 그대로 정적 호스팅하면 된다.
 
+## 사용
+- 그냥 `index.html` 을 브라우저에서 열면 된다(도구·빌드·CDN 불필요, 완전 자립형).
+- 웹 배포 시 이 폴더를 그대로 정적 호스팅하면 된다.
+
 ## WebMCP (AI 에이전트용 도구 노출, 2026-09-16 추가)
-`webmcp.js` 가 페이지의 기존 상태(`window.ATLAS_DEBUG`)만 읽어 **읽기 전용 도구 6개**를 등록한다.
-기존 방문자 동작은 전혀 바뀌지 않는다(미지원 브라우저에서는 즉시 종료 = progressive enhancement).
+**index.html 끝에 인라인으로** 들어 있는 스크립트가 페이지의 기존 상태만 읽어 도구 8개를 등록한다.
+별도 파일이 없고 **원본 CSP(`script-src 'unsafe-inline'`)를 그대로 유지**한다. 미지원 브라우저에서는 즉시 종료.
 
 | 도구 | 종류 | 설명 |
 |---|---|---|
@@ -46,19 +50,29 @@
 | `get_tensor_detail` | read | 텐서 상세(shape·format·count·params·inspector 설명문) |
 | `focus_tensor` | 조작 | 해당 텐서로 뷰 이동·하이라이트(페이지 자체 선택 로직 호출) |
 | `get_view_state` | read | 현재 보고 있는 view/precision/layout/선택 상태 |
+| `list_benchmarks` | read | 모델카드 벤치마크 전체 목록 + 모델별 점수·순위 (분류 필터 선택) |
+| `compare_models` | read | 특정 벤치마크에서 모델 비교 → 점수·순위·최고점 대비 델타·1:1 격차 |
+
+데이터 출처는 페이지가 이미 노출하는 `window.ATLAS_DEBUG` 뿐이다(중복 상태 없음).
+벤치마크 표를 도구에 노출하려고 그 객체에 `BENCH, BENCH_MODELS` 두 식별자를 **추가**했다(원본 로직 변경 없음, 디버그 노출 목록 확장).
 
 ### 확인 방법
-1. Chrome 149+ 에서 `chrome://flags/#enable-webmcp-testing` → Enabled → 재시작
-   (운영 배포 시에는 WebMCP origin trial 등록 후 `<meta http-equiv="origin-trial">` 삽입)
-2. 페이지를 열고 "Model Context Tool Inspector" 확장으로 도구 목록·스키마·수동 호출 확인
-3. 콘솔에서 `[webmcp] atlas tools registered: 6` 로그 확인
-   (확장 없이 로직만 볼 때: `await window.__WEBMCP_ATLAS.call('get_model_overview')`)
+1. Chrome 149+ 에서 `chrome://flags/#enable-webmcp-testing` → Enabled → 브라우저 재시작
+   (운영 배포로 일반 방문자에게 열려면 WebMCP **origin trial** 등록 후 `<meta http-equiv="origin-trial">` 삽입)
+2. DevTools → **Application → WebMCP** 패널에서 도구 8개 확인, 또는 "Model Context Tool Inspector" 확장
+3. 콘솔: `window.__WEBMCP_STATUS` → `"registered (8 tools)"`
+4. 확장 없이 로직만 확인: `await window.__WEBMCP_ATLAS.call('compare_models', {benchmark:'DeepSWE v1.1', models:['DS V4.1 Flash (this atlas)','GLM-5.3']})`
+
+### 실 API 표면 주의 (실측)
+- Chrome 149(플래그 활성) 에서는 **`navigator.modelContext`** 로 노출된다 (`document.modelContext` 는 아직 undefined).
+  스크립트는 둘 다 감지하므로 이후 Chrome 버전의 표면 이동에도 대응한다.
+- 도구 실행 경로: `navigator.modelContext.getTools()` 로 등록본을 읽고
+  `navigator.modelContext.executeTool(tool, JSON.stringify(args))` 로 호출(둘째 인자는 JSON **문자열**).
+  테스트 인터페이스는 `navigator.modelContextTesting`(listTools/executeTool).
+- 검증 실측(2026-09-16): 플래그 켠 Chrome 149 헤드리스에서 `compare_models('DeepSWE v1.1')` 실행 →
+  DS V4.1 Flash 74.2(1위) / GLM-5.3 66.9(5위), 격차 +7.3 (+10.9%) 반환.
 
 ### 전제조건 / 한계
-- 이 페이지는 **자체 CSP(meta)** 를 걸고 있다: `default-src 'none'; script-src 'unsafe-inline' 'self'; connect-src 'none'; …`
-  · 원래 `script-src 'unsafe-inline'` 뿐이라 **외부 스크립트(webmcp.js)가 차단**되어 도구가 등록되지 않았다 → `'self'` 를 추가해 같은 출처 스크립트만 허용했다.
-  · `connect-src 'none'` 은 그대로 두었다(페이지의 네트워크 차단 성격 유지). WebMCP 도구는 DOM/전역 상태만 읽으므로 네트워크가 필요 없다.
-  · CSP를 더 조이려면 `script-src 'unsafe-inline' 'self'` → `script-src 'unsafe-inline' 'sha256-…'`(webmcp.js 해시) 로 좁힐 수 있다. 파일을 수정하면 해시도 갱신해야 한다.
 - WebMCP는 **origin-isolated 문서**에서만 동작한다 → `document.domain` 을 쓰면 안 된다(현재 미사용).
 - Permissions Policy `tools`(기본 `self`) 적용 — top-level 문서는 그대로 동작.
 - Chrome/Edge 전용(실험 단계), Firefox·Safari 미지원. 도구는 그 페이지를 직접 방문한 브라우저에서만 발견된다.
